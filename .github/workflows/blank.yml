@@ -1,0 +1,54 @@
+name: Build, Push, and Scan Docker Images
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-push-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the code
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      # Step 2: Log in to Amazon ECR
+      - name: Log in to Amazon ECR
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | \
+          docker login --username AWS --password-stdin 503561444738.dkr.ecr.us-east-1.amazonaws.com
+
+      # Step 3: Build and Push Docker Images
+      - name: Build and Push Images
+        run: |
+          docker build -t vote ./vote
+          docker tag vote:latest 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:vote
+          docker push 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:vote
+
+          docker build -t worker ./worker
+          docker tag worker:latest 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:worker
+          docker push 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:worker
+
+          docker build -t result ./result
+          docker tag result:latest 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:result
+          docker push 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:result
+
+      # Step 4: Install Sysdig CLI Scanner
+      - name: Install Sysdig CLI Scanner
+        run: |
+          curl -L -o ./sysdig-cli-scanner https://download.sysdig.com/scanner/latest/sysdig-cli-scanner
+          chmod +x ./sysdig-cli-scanner
+
+      # Step 5: Scan Docker Images with Sysdig
+      - name: Scan Docker Images
+        env:
+          SECURE_API_TOKEN: ${{ secrets.SYSDIG_API_TOKEN }}
+        run: |
+          ./sysdig-cli-scanner -a $SECURE_API_TOKEN 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:vote
+          ./sysdig-cli-scanner -a $SECURE_API_TOKEN 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:worker
+          ./sysdig-cli-scanner -a $SECURE_API_TOKEN 503561444738.dkr.ecr.us-east-1.amazonaws.com/sysdig/votingapp:result
